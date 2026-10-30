@@ -1,0 +1,49 @@
+# The app plus the five MCP servers as separate services over Streamable HTTP.
+# They share the data volume (the simulated company) and the signing keys (set them in .env).
+x-env: &env
+  AD_DATA_DIR: /data
+  IDENTITY_SECRET: ${IDENTITY_SECRET:?set IDENTITY_SECRET in .env}
+  GRANT_SECRET: ${GRANT_SECRET:?set GRANT_SECRET in .env}
+x-server: &server
+  build: .
+  volumes: [addata:/data]
+  depends_on: {init: {condition: service_completed_successfully}}
+
+services:
+  init:
+    build: .
+    volumes: [addata:/data]
+    environment: *env
+    command: ["python", "-m", "accessdesk", "build"]
+  directory:
+    <<: *server
+    environment: {<<: *env, MCP_ALLOWED_HOSTS: "directory:*"}
+    command: ["python", "-m", "accessdesk.mcp_servers.directory", "--http", "8201"]
+  catalog:
+    <<: *server
+    environment: {<<: *env, MCP_ALLOWED_HOSTS: "catalog:*"}
+    command: ["python", "-m", "accessdesk.mcp_servers.catalog", "--http", "8202"]
+  itsm:
+    <<: *server
+    environment: {<<: *env, MCP_ALLOWED_HOSTS: "itsm:*"}
+    command: ["python", "-m", "accessdesk.mcp_servers.itsm", "--http", "8203"]
+  iam:
+    <<: *server
+    environment: {<<: *env, MCP_ALLOWED_HOSTS: "iam:*"}
+    command: ["python", "-m", "accessdesk.mcp_servers.iam", "--http", "8204"]
+  memory:
+    <<: *server
+    environment: {<<: *env, MCP_ALLOWED_HOSTS: "memory:*"}
+    command: ["python", "-m", "accessdesk.mcp_servers.memory", "--http", "8205"]
+  app:
+    build: .
+    volumes: [addata:/data]
+    ports: ["8502:8501"]
+    environment:
+      <<: *env
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MCP_URLS: "directory=http://directory:8201/mcp,catalog=http://catalog:8202/mcp,itsm=http://itsm:8203/mcp,iam=http://iam:8204/mcp,memory=http://memory:8205/mcp"
+    depends_on: [directory, catalog, itsm, iam, memory]
+
+volumes:
+  addata:
